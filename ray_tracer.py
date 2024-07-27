@@ -74,7 +74,7 @@ def calc_light_intensity_regular(light, intersection, rays):
         and np.linalg.norm(intersection.hit_point - light_hit.hit_point) < EPSILON
     )
     light_intensity = (1 - light.shadow_intensity) + light.shadow_intensity * (
-        c / (scene_settings.root_number_shadow_rays**2)
+            c / (scene_settings.root_number_shadow_rays ** 2)
     )
     return light_intensity
 
@@ -119,16 +119,16 @@ def xy_to_general_plane(plane_normal, plane_point):
 
     rotation_matrix = np.eye(4)
     rotation_matrix[:3, :3] = (cos_theta * np.eye(3)) + (
-        sin_theta
-        * np.array(
-            [
-                [0, -rotation_axis[2], rotation_axis[1]],
-                [rotation_axis[2], 0, -rotation_axis[0]],
-                [-rotation_axis[1], rotation_axis[0], 0],
-            ],
-            dtype="float",
-        )
-        + (1 - cos_theta) * np.outer(rotation_axis, rotation_axis)
+            sin_theta
+            * np.array(
+        [
+            [0, -rotation_axis[2], rotation_axis[1]],
+            [rotation_axis[2], 0, -rotation_axis[0]],
+            [-rotation_axis[1], rotation_axis[0], 0],
+        ],
+        dtype="float",
+    )
+            + (1 - cos_theta) * np.outer(rotation_axis, rotation_axis)
     )
     return np.matmul(translation_matrix, rotation_matrix)
 
@@ -152,6 +152,123 @@ def initialize_data(cam, settings, surfs, mats, light, w, h, bonus_t):
     lights = light
     width = w
     height = h
+
+
+#=====================ALMOG====================================
+
+def nearest_rays_intersections(rays):
+    global surfaces
+    closest_t_values = np.full(len(rays), float('inf'))
+    nearest_intersections = np.full(len(rays), None)
+
+    for surface in surfaces:
+        if len(rays) == 1:
+            intersections_with_ray = np.array(surface.get_intersection_with_ray(rays))
+        else:
+            intersections_with_ray = np.array(surface.get_intersection_with_rays(rays))
+        t_values = np.array([intersection.t if intersection is not None else float('inf') for intersection in
+                             intersections_with_ray])
+
+        closer_t = t_values < closest_t_values
+        closest_t_values = np.where(closer_t, t_values, closest_t_values)
+        nearest_intersections = np.where(closer_t, intersections_with_ray, nearest_intersections)
+
+    return nearest_intersections
+
+
+def find_nearest_ray_intersection(ray):  # to delete later it is a redaundent function
+    global surfaces
+    return nearest_rays_intersections([ray])[0]
+
+
+def ray_intersections_sorted_by_t(rays):
+    global surfaces
+    intersections = [
+        intersection for surface in surfaces
+        if (intersection := surface.get_intersection_with_ray(rays)) and intersection.t > EPSILON
+    ]
+    intersections.sort(key=lambda inter: inter.t)
+    return intersections
+
+
+def calculate_diffuse_color(intersection, light_intensity, light_color):
+    global materials, lights
+
+    diffuse_sum = np.array([0, 0, 0], dtype='float')
+    N = intersection.surface.get_normal(intersection.hit_point)
+
+    for light, intensity, color in zip(lights, light_intensity, light_color):
+        L = light.position - intersection.hit_point
+        L = normalize(L)
+        NL = N @ L
+        if NL <= 0:
+            continue
+
+        diffuse_sum += color * intensity * NL
+
+    diffuse_color = diffuse_sum * intersection.surface.get_material(materials).diffuse_color
+    return diffuse_color
+
+
+def calculate_specular_color(intersection, light_intensity, light_color):
+    global materials, lights
+
+    specular_sum = np.array([0, 0, 0], dtype='float')
+    V = intersection.ray.origin - intersection.hit_point
+    V = normalize(V)
+
+    for light, intensity, color in zip(lights, light_intensity, light_color):
+        L = light.position - intersection.hit_point
+        L = normalize(L)
+
+        light_ray = Ray(light.position, -L)
+        R = intersection.surface.get_reflected_ray(light_ray, intersection.hit_point).v
+
+        specular_sum += color * intensity * light.specular_intensity * \
+                        (np.power(np.dot(R, V), intersection.surface.get_material(materials).shininess))
+
+    specular_color = specular_sum * intersection.surface.get_material(materials).specular_color
+    return specular_color
+
+
+def get_ray_color(intersections, reflection_rec_level=0):
+    global materials, scene_settings, lights
+
+    if intersections is None or len(intersections) == 0:
+        return scene_settings.background_color
+
+    for i in range(len(intersections)):
+        if intersections[i].surface.get_material(materials).transparency == 0:
+            intersections = intersections[0:i + 1]
+            break
+
+    bg_color = scene_settings.background_color
+    color = None
+    for intersection in reversed(intersections):
+        transparency = intersection.surface.get_material(materials).transparency
+
+        if intersection is not None:
+            light_intensity_color_pairs = [get_light_intensity_batch(light, intersection) for light in lights]
+            light_intensity = [pair[0] for pair in light_intensity_color_pairs]
+            light_color = [pair[1] for pair in light_intensity_color_pairs]  #maybe we can improve here
+
+            diffuse_color = calculate_diffuse_color(intersection, light_intensity, light_color)
+            specular_color = calculate_specular_color(intersection, light_intensity, light_color)
+            d_s_color = diffuse_color + specular_color
+
+        else:
+            d_s_color = scene_settings.background_color
+
+        reflection_color = get_reflection_color(intersection, reflection_rec_level) * intersection.surface.get_material(
+            materials).reflection_color
+
+        color = ((1 - transparency) * d_s_color + transparency * bg_color) + reflection_color
+        bg_color = color
+
+    return color
+
+
+#=====================ALMOG====================================
 
 
 def parse_scene_file(file_path):
