@@ -19,7 +19,7 @@ class Sphere:
         t[np.isinf(t)] = np.nan  # Handle cases of negativity
         return t
 
-    def get_intersection_with_ray(self, ray): # maybe we can avoid code duplication - TBD
+    def get_intersection_with_ray(self, ray): # maybe we can avoid code duplication - To check later
         # result = self.get_intersection_with_rays([ray])
         # return result[0]
         # if it doesnt work than put it:

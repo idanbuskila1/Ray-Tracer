@@ -193,7 +193,7 @@ def find_all_ray_intersections_sorted(ray): #ray_intersections_sorted_by_t
 
 
 def calculate_diffuse_color(intersection, light_intensity, light_color):
-    global materials, lights
+    global materials,  lights
 
     diffuse = np.array([0, 0, 0], dtype='float')
     N = intersection.surface.get_normal(intersection.hit_point)
