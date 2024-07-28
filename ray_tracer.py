@@ -156,7 +156,8 @@ def initialize_data(cam, settings, surfs, mats, light, w, h, bonus_t):
 
 #=====================ALMOG====================================
 
-def nearest_rays_intersections(rays):
+def find_closest_rays_intersections_batch(
+        rays):  #  After we will see it is working we will call it nearest_rays_intersections
     global surfaces
     closest_t_values = np.full(len(rays), float('inf'))
     nearest_intersections = np.full(len(rays), None)
@@ -176,16 +177,16 @@ def nearest_rays_intersections(rays):
     return nearest_intersections
 
 
-def find_nearest_ray_intersection(ray):  # to delete later it is a redaundent function
-    global surfaces
-    return nearest_rays_intersections([ray])[0]
+def find_closest_ray_intersections(ray):  # to think whether delete later  - it is a redaundent function
+    #the upcoming name is find_nearest_ray_intersection
+    return find_closest_rays_intersections_batch([ray])[0]
 
 
-def ray_intersections_sorted_by_t(rays):
-    global surfaces
+def find_all_ray_intersections_sorted(ray): #ray_intersections_sorted_by_t
+    global surfaces, EPSILON
     intersections = [
         intersection for surface in surfaces
-        if (intersection := surface.get_intersection_with_ray(rays)) and intersection.t > EPSILON
+        if (intersection := surface.get_intersection_with_ray(ray)) and intersection.t > EPSILON
     ]
     intersections.sort(key=lambda inter: inter.t)
     return intersections
@@ -194,7 +195,7 @@ def ray_intersections_sorted_by_t(rays):
 def calculate_diffuse_color(intersection, light_intensity, light_color):
     global materials, lights
 
-    diffuse_sum = np.array([0, 0, 0], dtype='float')
+    diffuse = np.array([0, 0, 0], dtype='float')
     N = intersection.surface.get_normal(intersection.hit_point)
 
     for light, intensity, color in zip(lights, light_intensity, light_color):
@@ -204,16 +205,16 @@ def calculate_diffuse_color(intersection, light_intensity, light_color):
         if NL <= 0:
             continue
 
-        diffuse_sum += color * intensity * NL
+        diffuse += color * intensity * NL
 
-    diffuse_color = diffuse_sum * intersection.surface.get_material(materials).diffuse_color
+    diffuse_color = diffuse * intersection.surface.get_material(materials).diffuse_color
     return diffuse_color
 
 
 def calculate_specular_color(intersection, light_intensity, light_color):
     global materials, lights
 
-    specular_sum = np.array([0, 0, 0], dtype='float')
+    specular = np.array([0, 0, 0], dtype='float')
     V = intersection.ray.origin - intersection.hit_point
     V = normalize(V)
 
@@ -224,10 +225,9 @@ def calculate_specular_color(intersection, light_intensity, light_color):
         light_ray = Ray(light.position, -L)
         R = intersection.surface.get_reflected_ray(light_ray, intersection.hit_point).v
 
-        specular_sum += color * intensity * light.specular_intensity * \
-                        (np.power(np.dot(R, V), intersection.surface.get_material(materials).shininess))
+        specular += color * intensity * light.specular_intensity * (np.power(np.dot(R, V), intersection.surface.get_material(materials).shininess))
 
-    specular_color = specular_sum * intersection.surface.get_material(materials).specular_color
+    specular_color = specular * intersection.surface.get_material(materials).specular_color
     return specular_color
 
 
@@ -250,7 +250,7 @@ def get_ray_color(intersections, reflection_rec_level=0):
         if intersection is not None:
             light_intensity_color_pairs = [get_light_intensity_batch(light, intersection) for light in lights]
             light_intensity = [pair[0] for pair in light_intensity_color_pairs]
-            light_color = [pair[1] for pair in light_intensity_color_pairs]  #maybe we can improve here
+            light_color = [pair[1] for pair in light_intensity_color_pairs]  #I think  we can improve here -  TBD
 
             diffuse_color = calculate_diffuse_color(intersection, light_intensity, light_color)
             specular_color = calculate_specular_color(intersection, light_intensity, light_color)

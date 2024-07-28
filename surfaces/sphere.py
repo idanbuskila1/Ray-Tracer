@@ -11,13 +11,15 @@ class Sphere:
 
     @staticmethod
     def closest_t(t1, t2):
+        t1 = np.array([t1]) if np.isscalar(t1) else t1
+        t2 = np.array([t2]) if np.isscalar(t2) else t2
         t1[t1 < 0] = np.inf
         t2[t2 < 0] = np.inf
         t = np.minimum(t1, t2)
         t[np.isinf(t)] = np.nan  # Handle cases of negativity
         return t
 
-    def get_intersection_with_ray(self, ray):
+    def get_intersection_with_ray(self, ray): # maybe we can avoid code duplication - TBD
         # result = self.get_intersection_with_rays([ray])
         # return result[0]
         # if it doesnt work than put it:
@@ -30,13 +32,16 @@ class Sphere:
         discriminant_sqrt = np.sqrt(discriminant)
         t1 = (-b + discriminant_sqrt) / 2
         t2 = (-b - discriminant_sqrt) / 2
-        t = Sphere.closest_t(t1, t2)
 
-        if t is None or np.isnan(t).all():
+        t = Sphere.closest_t(t1, t2)
+        t = t[0]
+        if np.isnan(t):
             return None
         return Intersection(self, ray, t)
 
     def get_intersection_with_rays(self, rays):
+        if len(rays) == 1:
+            return [self.get_intersection_with_ray(rays[0])]
 
         ray_origins = np.array([ray.origin for ray in rays])
         ray_directions = np.array([ray.v for ray in rays])
@@ -53,7 +58,7 @@ class Sphere:
         sqrt_discriminant = np.sqrt(discriminant)
         t1 = (-b + sqrt_discriminant) / 2
         t2 = (-b - sqrt_discriminant) / 2
-        t = Sphere.closest_t(t1, t2) # Select the smallest non-negative t value
+        t = Sphere.closest_t(t1, t2)# Select the smallest non-negative t value
 
         # Determine which t values are valid (not NaN)
         valid = ~np.isnan(t)
