@@ -6,6 +6,7 @@ from ray import Ray
 
 class Cube:
     def __init__(self, position, scale, material_index):
+        super(Cube, self).__init__(material_index)
         self.position = position
         self.scale = scale
         self.material_index = material_index
@@ -69,16 +70,9 @@ class Cube:
                 for i in range(len(rays))
             ]
 
-    def get_material(self, materials):
-        return materials[self.material_index - 1]
-
     def in_cube(self, point):
         for i in range(3):
-            if not (
-                self.position[i] - self.scale / 2
-                <= point[i]
-                <= self.position[i] + self.scale / 2
-            ):
+            if not (self.position[i] - self.scale / 2 <= point[i] <= self.position[i] + self.scale / 2):
                 return False
         return True
 
@@ -86,8 +80,3 @@ class Cube:
         for plane in self.planes:
             if abs(np.dot(plane.normal, point) - plane.offset) < 0.00001:
                 return plane.normal
-
-    def get_reflected_ray(self, ray, point):
-        normal = self.get_normal(point)
-        reflection_dir = ray.v - 2 * (ray.v @ normal) * normal
-        return Ray(point, reflection_dir)

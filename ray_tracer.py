@@ -62,7 +62,8 @@ def get_light_intensity_batch(light, intersection):
     rays = [Ray(point, intersection.hit_point - point) for point in light_points]
     if not bonus:
         return calc_light_intensity_regular(light, intersection, rays), light.color
-    return calc_light_intensity_bonus(light, intersection, rays)
+    return 0
+    # return calc_light_intensity_bonus(light, intersection, rays)
 
 
 def calc_light_intensity_regular(light, intersection, rays):
@@ -311,14 +312,15 @@ def parse_scene_file(file_path):
     return camera, scene_settings, objects
 
 
-def save_image(image_array):
+def save_image(image_array, img_name):
     image = Image.fromarray(np.uint8(image_array))
 
     # Save the image to a file
-    image.save("scenes/Spheres.png")
+    image.save(f"{img_name}.png")
 
 
 def main():
+    start = time.time()
     parser = argparse.ArgumentParser(description="Python Ray Tracer")
     parser.add_argument("scene_file", type=str, help="Path to the scene file")
     parser.add_argument("output_image", type=str, help="Name of the output image file")
@@ -327,15 +329,17 @@ def main():
     args = parser.parse_args()
 
     # Parse the scene file
-    camera, scene_settings, objects = parse_scene_file(args.scene_file)
+    camera, scene_settings, surfaces, materials, lights = parse_scene_file(args.scene_file)
+    initialize_data(camera, scene_settings, surfaces, materials, lights, args.width, args.height, args.bonus)
 
     # TODO: Implement the ray tracer
-
+    res = np.zeros((height, width, 3), dtype='float')
     # Dummy result
-    image_array = np.zeros((500, 500, 3))
+    image_array = construct_image(res)
 
     # Save the output image
-    save_image(image_array)
+    save_image(image_array, args.output_image)
+    print(time.time() - start)
 
 
 if __name__ == "__main__":

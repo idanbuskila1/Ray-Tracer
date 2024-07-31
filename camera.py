@@ -11,11 +11,10 @@ class Camera:
         self.screen_distance = screen_distance
         self.screen_width = screen_width
         self.direction = normalize(self.look_at - self.position)
-        self.right = normalize(np.cross(self.direction, self.up_vector))
-        self.up_vector = normalize(np.cross(self.right, self.direction))
+        # self.right = normalize(np.cross(self.direction, self.up_vector))
+        # self.up_vector = normalize(np.cross(self.right, self.direction))
         self.screen_center = self.position + self.screen_distance * self.direction
         self.ratio = -1
 
-
-def set_ratio(self, w):
-    self.ratio = self.screen_width / w
+    def set_ratio(self, w):
+        self.ratio = self.screen_width / w
