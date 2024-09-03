@@ -1,72 +1,58 @@
 import numpy as np
-
+from surfaces.surface import Surface
 from intersection import Intersection
 
 
-class Sphere:
-    def __init__(self, material_index, position, radius):
-        super().__init__(material_index)
-        self.position = position
+class Sphere(Surface):
+    def __init__(self, position, radius, material_index):
+        super(Sphere, self).__init__(material_index)
+        self.position = np.array(position, dtype="float")
         self.radius = radius
 
-    @staticmethod
-    def closest_t(t1, t2):
-        t1 = np.array([t1]) if np.isscalar(t1) else t1
-        t2 = np.array([t2]) if np.isscalar(t2) else t2
-        t1[t1 < 0] = np.inf
-        t2[t2 < 0] = np.inf
-        t = np.minimum(t1, t2)
-        t[np.isinf(t)] = np.nan  # Handle cases of negativity
-        return t
-
-    def get_intersection_with_ray(self, ray): # maybe we can avoid code duplication - To check later
-        # result = self.get_intersection_with_rays([ray])
-        # return result[0]
-        # if it doesnt work than put it:
-        P0 = ray.origin - self.position
-        b = 2 * (ray.v @ P0)
-        c = (P0 @ P0) - self.radius ** 2
-        discriminant = b ** 2 - 4 * c
-        if discriminant <= 0:
+    def get_intersection_with_ray(self, ray):
+        ray_to_center = ray.origin - self.position
+        a = 1
+        b = 2 * (ray.v @ ray_to_center)
+        c = (ray_to_center @ ray_to_center) - self.radius ** 2
+        disc = b ** 2 - 4 * a * c
+        if disc <= 0:
             return None
-        discriminant_sqrt = np.sqrt(discriminant)
-        t1 = (-b + discriminant_sqrt) / 2
-        t2 = (-b - discriminant_sqrt) / 2
-
-        t = Sphere.closest_t(t1, t2)
-        t = t[0]
-        if np.isnan(t):
+        disc_sqrt = np.sqrt(disc)
+        t1 = (-b + disc_sqrt) / 2 * a
+        t2 = (-b - disc_sqrt) / 2 * a
+        if t1 < 0 and t2 < 0:
             return None
+        t1 = t1 if t1 >= 0 else float('inf')
+        t2 = t2 if t2 >= 0 else float('inf')
+        t = min(t1, t2)
         return Intersection(self, ray, t)
+
+    @staticmethod
+    def t_comp(t1, t2):
+        if t1 < 0:
+            if t2 < 0:
+                return None
+            return t2
+        if t2 < 0:
+            return t1
+        return min(t1, t2)
 
     def get_intersection_with_rays(self, rays):
         if len(rays) == 1:
             return [self.get_intersection_with_ray(rays[0])]
-
-        ray_origins = np.array([ray.origin for ray in rays])
-        ray_directions = np.array([ray.v for ray in rays])
-        P0 = ray_origins - self.position
-
-        # Coefficients for the quadratic equation
-        b = 2 * np.einsum('ij,ij->i', P0, ray_directions)
-        c = np.einsum('ij,ij->i', P0, P0) - self.radius ** 2
-
-        # Solve the quadratic equation
-        discriminant = b ** 2 - 4 * c
-        illegals = discriminant < 0
-        discriminant[illegals] = 0
-        sqrt_discriminant = np.sqrt(discriminant)
-        t1 = (-b + sqrt_discriminant) / 2
-        t2 = (-b - sqrt_discriminant) / 2
-        t = Sphere.closest_t(t1, t2)# Select the smallest non-negative t value
-
-        # Determine which t values are valid (not NaN)
-        valid = ~np.isnan(t)
-
-        # Create Intersection objects for valid intersections, None otherwise
-        intersections = [Intersection(self, rays[i], t[i]) if valid[i] and not illegals[i] else None for i in range(len(rays))]
-
-        return intersections
+        ray_origins = [ray.origin for ray in rays]
+        ray_directions = [ray.v for ray in rays]
+        rays_to_center = ray_origins - self.position
+        b_values = 2 * np.einsum('ij, ij -> i', ray_directions, rays_to_center)
+        c_values = np.einsum('ij, ij -> i', rays_to_center, rays_to_center) - self.radius ** 2
+        disc_values = b_values ** 2 - 4 * c_values
+        illegals = disc_values < 0
+        disc_values[illegals] = 0
+        disc_sqrt_values = disc_values ** 0.5
+        t1_values = (-b_values + disc_sqrt_values) / 2
+        t2_values = (-b_values - disc_sqrt_values) / 2
+        t = [Sphere.t_comp(t1_values[i], t2_values[i]) for i in range(len(t1_values))]
+        return [Intersection(self, rays[i], t[i]) if (not illegals[i]) and t[i] is not None else None for i in range(len(rays))]
 
     def get_normal(self, point):
         N = point - self.position

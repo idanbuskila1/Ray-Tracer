@@ -1,7 +1,4 @@
 from abc import ABC, abstractmethod
-
-import numpy as np
-
 from ray import Ray
 
 
@@ -25,7 +22,7 @@ class Surface(ABC):
         pass
 
     def get_reflected_ray(self, ray, point):
-        surface_normal = self.get_normal(point)
-        cos_theta = np.dot(ray.v, surface_normal)
-        reflected_direction = ray.v - 2 * cos_theta * surface_normal
-        return Ray(point, reflected_direction)
+        surf_normal = self.get_normal(point)
+        cos_a = ray.v @ surf_normal
+        reflection_dir = ray.v - 2 * cos_a * surf_normal
+        return Ray(point, reflection_dir)

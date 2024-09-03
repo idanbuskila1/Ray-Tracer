@@ -1,7 +1,5 @@
 import numpy as np
 
-normalize = lambda vec: vec / np.linalg.norm(vec)
-
 
 class Ray:
     def __init__(self, *params):
@@ -13,14 +11,12 @@ class Ray:
             self.init_directly(params[0], params[1])
 
     def init_from_camera(self, camera, i, j, rx, ry):
-        p = (
-            camera.screen_center
-            + (j - rx // 2) * camera.ratio * camera.right
-            - (i - ry // 2) * camera.ratio * camera.up_vector
-        )
-        self.v = normalize(p - camera.position)
+        p = camera.screen_center + (j - rx // 2) * camera.ratio * camera.right - (
+                    i - ry // 2) * camera.ratio * camera.up_vector
+        self.v = p - camera.position
+        self.v = self.v / np.linalg.norm(self.v)
         self.origin = camera.position
 
     def init_directly(self, origin, v):
         self.origin = origin
-        self.v = normalize(v)
+        self.v = v / np.linalg.norm(v)

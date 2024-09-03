@@ -6,3 +6,4 @@ class SceneSettings:
         self.background_color = np.array(background_color, dtype="float")
         self.root_number_shadow_rays = int(root_number_shadow_rays)
         self.max_recursions = max_recursions
+        self.indirect_light_samples = 16
