@@ -4,12 +4,14 @@ from camera import Camera
 from light import Light
 from material import Material
 from scene_settings import SceneSettings
-from surfaces.cube import Cube
+from surfaces.box import Box
 from surfaces.infinite_plane import InfinitePlane
 from surfaces.sphere import Sphere
 from ray import Ray
 import numpy as np
 import time
+import pickle
+import os
 
 EPSILON = 0.000001
 camera: Camera
@@ -31,6 +33,7 @@ def parse_scene_file(file_path):
     materials = []
     camera = None
     scene_settings = None
+
     with open(file_path, "r") as f:
         for line in f:
             line = line.strip()
@@ -39,31 +42,77 @@ def parse_scene_file(file_path):
             parts = line.split()
             obj_type = parts[0]
             params = [float(p) for p in parts[1:]]
+
             if obj_type == "cam":
                 camera = Camera(
-                    params[:3], params[3:6], params[6:9], params[9], params[10]
+                    params[:3],  # Camera position
+                    params[3:6],  # Look at point
+                    params[6:9],  # Up vector
+                    params[9],  # Screen distance
+                    params[10],  # Screen width
                 )
             elif obj_type == "set":
-                scene_settings = SceneSettings(params[:3], params[3], params[4])
+                scene_settings = SceneSettings(
+                    params[:3],  # Background color (RGB)
+                    params[3],  # Shadow rays
+                    params[4],  # Recursion max depth
+                )
             elif obj_type == "mtl":
                 material = Material(
-                    params[:3], params[3:6], params[6:9], params[9], params[10]
+                    params[:3],  # Diffuse color (RGB)
+                    params[3:6],  # Specular color (RGB)
+                    params[6:9],  # Reflection color (RGB)
+                    params[9],  # Phong exponent
+                    params[10],  # Transparency
                 )
                 materials.append(material)
             elif obj_type == "sph":
-                sphere = Sphere(params[:3], params[3], int(params[4]))
+                sphere = Sphere(
+                    params[:3],  # Center position
+                    params[3],  # Radius
+                    int(params[4]),  # Material index
+                )
                 surfaces.append(sphere)
             elif obj_type == "pln":
-                plane = InfinitePlane(params[:3], params[3], int(params[4]))
+                plane = InfinitePlane(
+                    params[:3],  # Normal vector
+                    params[3],  # Offset
+                    int(params[4]),  # Material index
+                )
                 surfaces.append(plane)
             elif obj_type == "box":
-                cube = Cube(params[:3], params[3], int(params[4]))
-                surfaces.append(cube)
+                center = params[:3]  # Box center position (cx, cy, cz)
+                length = params[3]  # Box length (lx)
+                width = params[4]  # Box width (wy)
+                height = params[5]  # Box height (hz)
+                scale = np.array([length, width, height], dtype="float")
+
+                # Rotation matrix (r1, r2, r3, ..., r9)
+                rotation_matrix = np.array(
+                    [
+                        params[6:9],  # First row of the rotation matrix
+                        params[9:12],  # Second row of the rotation matrix
+                        params[12:15],  # Third row of the rotation matrix
+                    ]
+                )
+
+                material_index = int(params[15])  # Material index
+
+                # Create the Box object with the parsed parameters
+                box = Box(center, scale, rotation_matrix, material_index)
+                surfaces.append(box)
             elif obj_type == "lgt":
-                light = Light(params[:3], params[3:6], params[6], params[7], params[8])
+                light = Light(
+                    params[:3],  # Position
+                    params[3:6],  # Color (RGB)
+                    params[6],  # Specular intensity
+                    params[7],  # Shadow intensity
+                    params[8],  # Radius
+                )
                 lights.append(light)
             else:
-                raise ValueError("Unknown object type: {}".format(obj_type))
+                raise ValueError(f"Unknown object type: {obj_type}")
+
     return camera, scene_settings, surfaces, materials, lights
 
 
@@ -106,18 +155,6 @@ def find_closest_rays_intersections_batch(rays):
 
 
 def find_closest_ray_intersections(ray):
-    # global surfaces
-    # min_t = float('inf')
-    # closest_intersection = None
-    #
-    # for surface in surfaces:
-    #     intersection = surface.get_intersection_with_ray(ray)
-    #     if intersection is None:
-    #         continue
-    #     if min_t > intersection.t:
-    #         min_t = intersection.t
-    #         closest_intersection = intersection
-    # return closest_intersection
     return find_closest_rays_intersections_batch([ray])[0]
 
 
@@ -230,7 +267,55 @@ def get_reflection(intersection, reflection_rec_level):
     return calc_reflection(intersection, reflection_rec_level)
 
 
-def get_ray_color(intersections, reflection_rec_level=0):
+def stratified_sample_hemisphere(N, num_samples):
+    samples = []
+    sqrt_samples = int(np.sqrt(num_samples))
+    for i in range(sqrt_samples):
+        for j in range(sqrt_samples):
+            u1 = (i + np.random.random()) / sqrt_samples
+            u2 = (j + np.random.random()) / sqrt_samples
+
+            # Convert to spherical coordinates
+            theta = np.arccos(np.sqrt(1 - u1))
+            phi = 2 * np.pi * u2
+
+            x = np.sin(theta) * np.cos(phi)
+            y = np.sin(theta) * np.sin(phi)
+            z = np.cos(theta)
+
+            sample_dir = np.array([x, y, z])
+
+            if np.dot(sample_dir, N) < 0:
+                sample_dir = -sample_dir
+
+            samples.append(sample_dir)
+    return samples
+
+
+def calculate_indirect_lighting(intersection, reflection_rec_level):
+    if reflection_rec_level >= scene_settings.max_recursions:
+        return np.array([0, 0, 0], dtype="float")
+
+    indirect_color = np.array([0, 0, 0], dtype="float")
+    num_samples = (
+        100  # Number of samples (ideally a perfect square like 16, 25, 36, etc.)
+    )
+    N = intersection.surface.get_normal(intersection.hit_point)
+
+    sample_directions = stratified_sample_hemisphere(N, num_samples)
+
+    for dir in sample_directions:
+        new_ray = Ray(intersection.hit_point, dir)
+        next_intersections = find_all_ray_intersections_sorted(new_ray)
+        if next_intersections:
+            indirect_color += get_direct_lighting(
+                next_intersections, reflection_rec_level + 1
+            ) * np.dot(dir, N)
+
+    return indirect_color / num_samples
+
+
+def get_direct_lighting(intersections, reflection_rec_level=0):
     global materials, scene_settings, lights
 
     if intersections is None or len(intersections) == 0:
@@ -241,19 +326,16 @@ def get_ray_color(intersections, reflection_rec_level=0):
             intersections = intersections[0 : i + 1]
             break
 
-    bg_color = scene_settings.background_color
-    color = None
+    color = np.array([0, 0, 0], dtype="float")
+
     for intersection in reversed(intersections):
         transparency = intersection.surface.get_material(materials).transparency
-
         if intersection is not None:
             light_intensity_color_pairs = [
                 get_light_intensity_batch(light, intersection) for light in lights
             ]
             light_intensity = [pair[0] for pair in light_intensity_color_pairs]
-            light_color = [
-                pair[1] for pair in light_intensity_color_pairs
-            ]  # I think  we can improve here -  TBD
+            light_color = [pair[1] for pair in light_intensity_color_pairs]
 
             diffuse_color = calculate_diffuse_color(
                 intersection, light_intensity, light_color
@@ -261,20 +343,27 @@ def get_ray_color(intersections, reflection_rec_level=0):
             specular_color = calculate_specular_color(
                 intersection, light_intensity, light_color
             )
-            d_s_color = diffuse_color + specular_color
+            color += diffuse_color + specular_color
 
-        else:
-            d_s_color = scene_settings.background_color
+    return color
 
-        reflection_color = (
-            get_reflection(intersection, reflection_rec_level)
-            * intersection.surface.get_material(materials).reflection_color
-        )
 
-        color = (
-            (1 - transparency) * d_s_color + transparency * bg_color
-        ) + reflection_color
-        bg_color = color
+def get_ray_color(intersections, reflection_rec_level=0):
+    global scene_settings
+
+    if intersections is None or len(intersections) == 0:
+        return scene_settings.background_color
+
+    color = get_direct_lighting(intersections, reflection_rec_level)
+
+    if reflection_rec_level < scene_settings.max_recursions:
+        for intersection in intersections:
+            transparency = intersection.surface.get_material(materials).transparency
+            if transparency < 1:
+                indirect_lighting = calculate_indirect_lighting(
+                    intersection, reflection_rec_level
+                )
+                color += (1 - transparency) * indirect_lighting
 
     return color
 
@@ -288,10 +377,9 @@ def calculate_diffuse_color(intersection, light_intensity, light_color):
     for light, intensity, color in zip(lights, light_intensity, light_color):
         L = light.position - intersection.hit_point
         L = normalize(L)
-        NL = N @ L
+        NL = np.dot(N, L)
         if NL <= 0:
             continue
-
         diffuse += color * intensity * NL
 
     diffuse_color = diffuse * intersection.surface.get_material(materials).diffuse_color
@@ -369,16 +457,33 @@ def get_diffuse_and_specular_color(intersection):
     return color
 
 
-def calc_img(img):
+def calc_img(img, backup_file="backup.pkl", save_interval=10):
     global width
     global height
     global camera
     camera.set_ratio(width)
-    for i in range(height):
+
+    # Check if a backup file exists and load it
+    if os.path.exists(backup_file):
+        with open(backup_file, "rb") as f:
+            backup_data = pickle.load(f)
+            start_row = backup_data["start_row"]
+            img = backup_data["img"]
+    else:
+        start_row = 0
+
+    for i in range(start_row, height):
         print(f"row:{i}")
         for j in range(width):
             ray = Ray(camera, i, j, width, height)
             img[i, j] = get_ray_color(find_all_ray_intersections_sorted(ray))
+
+        # Save the intermediate results
+        if i % save_interval == 0:
+            with open(backup_file, "wb") as f:
+                backup_data = {"start_row": i + 1, "img": img}
+                pickle.dump(backup_data, f)
+
     img[img > 1] = 1
     img[img < 0] = 0
     return img * 255
